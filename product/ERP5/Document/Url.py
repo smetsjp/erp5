@@ -73,7 +73,7 @@ class Url(Coordinate, Base, UrlMixin):
     """
     if self.hasData():
       return self.getData('')
-    return self.getUrlString()
+    return self.getUrlString('')
 
   security.declareProtected(Permissions.ModifyPortalContent, 'fromText')
   @deprecated
