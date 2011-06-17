@@ -11,13 +11,12 @@
             <value>
               <list>
                 <string>title</string>
-                <string>description</string>
               </list>
             </value>
         </item>
         <item>
             <key> <string>id</string> </key>
-            <value> <string>my_default_fax_text</string> </value>
+            <value> <string>my_default_telephone_data</string> </value>
         </item>
         <item>
             <key> <string>message_values</string> </key>
@@ -73,10 +72,6 @@
             <value>
               <dictionary>
                 <item>
-                    <key> <string>description</string> </key>
-                    <value> <string>The FAX number.</string> </value>
-                </item>
-                <item>
                     <key> <string>field_id</string> </key>
                     <value> <string>my_string_field</string> </value>
                 </item>
@@ -90,7 +85,7 @@
                 </item>
                 <item>
                     <key> <string>title</string> </key>
-                    <value> <string>FAX</string> </value>
+                    <value> <string>Telephone</string> </value>
                 </item>
               </dictionary>
             </value>
