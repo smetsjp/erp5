@@ -81,7 +81,7 @@ class Url(Coordinate, Base, UrlMixin):
     """
     Sets url_string a.k.a. scheme-specific-part of a URL
     """
-    self._setData(coordinate_text)
+    self._setData(text)
     self.setUrlString(text)
 
   security.declareProtected(Permissions.AccessContentsInformation,
