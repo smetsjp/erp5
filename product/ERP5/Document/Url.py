@@ -69,6 +69,8 @@ class Url(Coordinate, Base, UrlMixin):
     users just enter www.erp5.com or info@erp5.com rather than
     http://www.erp5.com or mailto:info@erp5.com
     """
+    if self.hasData():
+      return self.getData('')
     return self.getUrlString()
 
   security.declareProtected(Permissions.ModifyPortalContent, 'fromText')
@@ -77,6 +79,7 @@ class Url(Coordinate, Base, UrlMixin):
     """
     Sets url_string a.k.a. scheme-specific-part of a URL
     """
+    self._setData(coordinate_text)
     self.setUrlString(text)
 
   security.declareProtected(Permissions.AccessContentsInformation,
