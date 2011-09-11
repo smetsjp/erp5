@@ -128,6 +128,9 @@ class EmailDocument(TextDocument):
     is similar to a TextDocument.
     A Text Document which stores raw HTML and can 
     convert it to various formats.
+
+    another line for testing
+    here too
   """
 
   meta_type = 'ERP5 Email Document'
@@ -776,7 +779,7 @@ class EmailDocument(TextDocument):
 
       XXX - Needs to be unified with Event methods
     """
-    self.MailHost.send(message) # ugly hardcoding
+    self.MailHost.send(message) # uggly hardcoding
 
   # Because TextDocument is base_convertable and not EmailDocument.
   # getData must be implemented like File.getData is.

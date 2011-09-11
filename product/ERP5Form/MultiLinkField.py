@@ -38,7 +38,8 @@ class MultiLinkFieldWidget(Widget.MultiItemsWidget):
   def render_item(self, item_text, item_value, key, css_class, extra_item, render_prefix=None) :
     """Render an Item."""
     return Widget.render_element('a',
-                                href=item_value,
+                                onclick=item_value, # Hack
+				href=item_value,
                                 contents = item_text,
                                 name = key,
                                 css_class = css_class,

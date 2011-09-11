@@ -120,7 +120,7 @@ class DiscoverableMixin(CachedConvertableMixin):
   security.declareProtected(Permissions.ModifyPortalContent,
                             'discoverMetadata')
   def discoverMetadata(self, filename=None, user_login=None,
-                       input_parameter_dict=None):
+                       input_parameter_dict=None, file_name=None):
     """
     This is the main metadata discovery function - controls the process
     of discovering data from various sources. The discovery itself is
@@ -134,6 +134,7 @@ class DiscoverableMixin(CachedConvertableMixin):
                  currently logged in, then we'll get him from session
     input_parameter_dict - arguments provided to Create this content by user.
     """
+    if file_name is not None: filename=file_name
     # Preference is made of a sequence of 'user_login', 'content', 'filename', 'input'
     method = self._getTypeBasedMethod('getPreferredDocumentMetadataDiscoveryOrderList')
     order_list = list(method())

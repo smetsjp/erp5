@@ -154,7 +154,7 @@ class UrlRegistryTool(BaseTool):
         url_list.append(url)
     return url_list
 
-  def updateUrlRegistryTool(self):
+  def updateUrlRegistryTool(self): # XXX-JPS Url -> URL
     """
     Fetch all document path, then call in activities
     Base_registerUrl on all of them (grouped by reference)

@@ -256,10 +256,13 @@ class DomainTool(BaseTool):
         return sql_result_list
       result_list = []
       for predicate in [x.getObject() for x in sql_result_list]:
-        if (not test) or predicate.test(
-                       context,
-                       tested_base_category_list=tested_base_category_list):
-          result_list.append(predicate)
+        if predicate is not None: # Take into account the possibility 
+                                  # of broken catalog or deleted yet
+                                  # still indexed object
+          if (not test) or predicate.test(
+                         context,
+                         tested_base_category_list=tested_base_category_list):
+            result_list.append(predicate)
       if filter_method is not None:
         result_list = filter_method(result_list)
       if sort_key_method is not None:
