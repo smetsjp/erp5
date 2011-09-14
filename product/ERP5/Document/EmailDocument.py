@@ -128,9 +128,6 @@ class EmailDocument(TextDocument):
     is similar to a TextDocument.
     A Text Document which stores raw HTML and can 
     convert it to various formats.
-
-    another line for testing
-    here too
   """
 
   meta_type = 'ERP5 Email Document'
@@ -459,6 +456,11 @@ class EmailDocument(TextDocument):
     """
     Returns the content of the email as text. This is useful
     to display the content of an email.
+
+    According to rfc, (http://tools.ietf.org/html/rfc2046#section-5.1.4)
+    getTextContent should return html part of multipart/alternative couple
+    If multipart/mixed, the html part is an attachement. So return the
+    main content (text/plain).
     """
     self._checkConversionFormatPermission(None)
     if not self.hasFile():
