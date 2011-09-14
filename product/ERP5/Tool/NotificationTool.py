@@ -101,7 +101,8 @@ def buildAttachmentDictList(document_list, document_type_list=()):
 def buildEmailMessage(from_url, to_url, msg=None,
                       subject=None, attachment_list=None,
                       extra_headers=None,
-                      additional_headers=None):
+                      additional_headers=None,
+                      cc_url=None, bcc_url=None):
   """
     Builds a mail message which is ready to be
     sent by Zope MailHost.
@@ -141,9 +142,14 @@ def buildEmailMessage(from_url, to_url, msg=None,
     message.add_header('From', from_url)
   if to_url:
     message.add_header('To', to_url)
+  if cc_url: 
+    message.add_header('Cc', cc_url)
+  if bcc_url: 
+    message.add_header('Bcc', bcc_url)
 
   for attachment in attachment_list:
     attachment_name = attachment.get('name', '')
+    attachment_name = attachment_name or '' # Prevent None params
 
     # try to guess the mime type
     if not attachment.has_key('mime_type'):
