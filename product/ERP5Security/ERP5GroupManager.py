@@ -28,6 +28,7 @@ from Products.ERP5Type.ERP5Type \
   import ERP5TYPE_SECURITY_GROUP_ID_GENERATION_SCRIPT
 from Products.PluggableAuthService.PropertiedUser import PropertiedUser
 from ZODB.POSException import ConflictError
+from Shared.DC.ZRDB.DA import DatabaseError
 
 import sys
 
@@ -122,8 +123,13 @@ class ERP5GroupManager(BasePlugin):
           security_definition_list = mapping_method()
 
         # get the person from its reference - no security check needed
-        catalog_result = self.portal_catalog.unrestrictedSearchResults(
-            portal_type="Person", reference=user_name)
+        try:
+          catalog_result = self.portal_catalog.unrestrictedSearchResults(
+              portal_type="Person", reference=user_name)
+        except DatabaseError: 
+          LOG('ERP5GroupManager', WARNING, 'could not connect to database',
+                                  error = sys.exc_info())
+          catalog_result = []
         if len(catalog_result) != 1: # we won't proceed with groups
           if len(catalog_result) > 1: # configuration is screwed
             raise ConsistencyError, 'There is more than one Person whose \
