@@ -1,0 +1,878 @@
+<?xml version="1.0"?>
+<ZopeData>
+  <record id="1" aka="AAAAAAAAAAE=">
+    <pickle>
+      <global name="Document Component" module="erp5.portal_type"/>
+    </pickle>
+    <pickle>
+      <dictionary>
+        <item>
+            <key> <string>_Access_contents_information_Permission</string> </key>
+            <value>
+              <tuple>
+                <string>Assignee</string>
+                <string>Assignor</string>
+                <string>Associate</string>
+                <string>Auditor</string>
+                <string>Author</string>
+                <string>Manager</string>
+                <string>Owner</string>
+              </tuple>
+            </value>
+        </item>
+        <item>
+            <key> <string>_Add_portal_content_Permission</string> </key>
+            <value>
+              <tuple>
+                <string>Assignee</string>
+                <string>Assignor</string>
+                <string>Associate</string>
+                <string>Author</string>
+                <string>Manager</string>
+                <string>Owner</string>
+              </tuple>
+            </value>
+        </item>
+        <item>
+            <key> <string>_Modify_portal_content_Permission</string> </key>
+            <value>
+              <tuple>
+                <string>Assignee</string>
+                <string>Assignor</string>
+                <string>Associate</string>
+                <string>Author</string>
+                <string>Manager</string>
+                <string>Owner</string>
+              </tuple>
+            </value>
+        </item>
+        <item>
+            <key> <string>_View_Permission</string> </key>
+            <value>
+              <tuple>
+                <string>Assignee</string>
+                <string>Assignor</string>
+                <string>Associate</string>
+                <string>Auditor</string>
+                <string>Author</string>
+                <string>Manager</string>
+                <string>Owner</string>
+              </tuple>
+            </value>
+        </item>
+        <item>
+            <key> <string>default_reference</string> </key>
+            <value> <string>EmailDocument</string> </value>
+        </item>
+        <item>
+            <key> <string>id</string> </key>
+            <value> <string>erp5.document.email_document</string> </value>
+        </item>
+        <item>
+            <key> <string>portal_type</string> </key>
+            <value> <string>Document Component</string> </value>
+        </item>
+        <item>
+            <key> <string>sid</string> </key>
+            <value>
+              <none/>
+            </value>
+        </item>
+        <item>
+            <key> <string>text_content</string> </key>
+            <value> <string encoding="cdata"><![CDATA[
+
+# -*- coding: utf-8 -*-\n
+##############################################################################\n
+#\n
+# Copyright (c) 2007 Nexedi SA and Contributors. All Rights Reserved.\n
+#                    Jean-Paul Smets-Solanes <jp@nexedi.com>\n
+#\n
+# WARNING: This program as such is intended to be used by professional\n
+# programmers who take the whole responsability of assessing all potential\n
+# consequences resulting from its eventual inadequacies and bugs\n
+# End users who are looking for a ready-to-use solution with commercial\n
+# garantees and support are strongly adviced to contract a Free Software\n
+# Service Company\n
+#\n
+# This program is Free Software; you can redistribute it and/or\n
+# modify it under the terms of the GNU General Public License\n
+# as published by the Free Software Foundation; either version 2\n
+# of the License, or (at your option) any later version.\n
+#\n
+# This program is distributed in the hope that it will be useful,\n
+# but WITHOUT ANY WARRANTY; without even the implied warranty of\n
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n
+# GNU General Public License for more details.\n
+#\n
+# You should have received a copy of the GNU General Public License\n
+# along with this program; if not, write to the Free Software\n
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.\n
+#\n
+##############################################################################\n
+\n
+import re, types\n
+from DateTime import DateTime\n
+from AccessControl import ClassSecurityInfo, Unauthorized\n
+from Products.ERP5Type.Accessor.Constant import PropertyGetter as ConstantGetter\n
+from Products.CMFCore.utils import _checkPermission\n
+from Products.ERP5Type import Permissions, PropertySheet\n
+from Products.ERP5.Document.TextDocument import TextDocument\n
+from Products.ERP5.Document.File import File\n
+from Products.ERP5.Document.Document import ConversionError\n
+from Products.ERP5.mixin.document_proxy import DocumentProxyMixin, DocumentProxyError\n
+from Products.ERP5.Tool.NotificationTool import buildEmailMessage\n
+from Products.ERP5Type.Utils import guessEncodingFromText\n
+from MethodObject import Method\n
+from zLOG import LOG, INFO\n
+\n
+try:\n
+  from Products.MimetypesRegistry.common import MimeTypeException\n
+except ImportError:\n
+  class MimeTypeException(Exception):\n
+    """\n
+    A dummy exception class which is used when MimetypesRegistry product is\n
+    not installed yet.\n
+    """\n
+\n
+from email import message_from_string\n
+from email.Header import decode_header, HeaderParseError\n
+from email.Utils import parsedate_tz, mktime_tz\n
+\n
+DEFAULT_TEXT_FORMAT = \'text/html\'\n
+COMMASPACE = \', \'\n
+_MARKER = []\n
+\n
+filename_regexp = \'name="([^"]*)"\'\n
+\n
+\n
+class EmailDocumentProxyMixin(DocumentProxyMixin):\n
+  """\n
+  Provides access to documents referenced by the causality field\n
+  """\n
+  # Declarative security\n
+  security = ClassSecurityInfo()\n
+  security.declareObjectProtected(Permissions.AccessContentsInformation)\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'hasFile\')\n
+  def hasFile(self):\n
+    """\n
+    hasFile is used in many parts of EmailDocument in order to know\n
+    if there is some document content to manage. We define it here\n
+    in order to say that there is no document if we are not able to\n
+    get the proxy\n
+    """\n
+    has_file = False\n
+    try:\n
+      proxied_document = self.getProxiedDocument()\n
+      has_file = proxied_document.hasFile()\n
+    except DocumentProxyError:\n
+      pass\n
+    return has_file\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getTextContent\')\n
+  def getTextContent(self, default=_MARKER):\n
+    result = None\n
+    try:\n
+      proxied_document = self.getProxiedDocument()\n
+      result = proxied_document.getTextContent(default=default)\n
+    except DocumentProxyError:\n
+      pass\n
+    if default is _MARKER:\n
+      return result\n
+    return result or default\n
+\n
+class ProxiedMethod(Method):\n
+  """\n
+  Accessor that retrieves methods directly on the proxy\n
+  """\n
+\n
+  def __init__(self, proxied_method_id):\n
+    self.proxied_method_id = proxied_method_id\n
+\n
+  def __call__(self, instance, *args, **kw):\n
+    proxied_document = instance.getProxiedDocument()\n
+    method = getattr(proxied_document, self.proxied_method_id)\n
+    return method(*args, **kw)\n
+\n
+# generate all proxy method on EmailDocumentProxyMixin\n
+for method_id in (\'getContentType\',\n
+                  \'getContentInformation\', \'getAttachmentData\',\n
+                  \'getAttachmentInformationList\'):\n
+  EmailDocumentProxyMixin.security.declareProtected(\n
+       Permissions.AccessContentsInformation,\n
+       method_id)\n
+  setattr(EmailDocumentProxyMixin, method_id,\n
+      ProxiedMethod(method_id))\n
+\n
+class EmailDocument(TextDocument):\n
+  """\n
+    EmailDocument is a File which stores its metadata in a form which\n
+    is similar to a TextDocument.\n
+    A Text Document which stores raw HTML and can \n
+    convert it to various formats.\n
+\n
+    another line for testing\n
+    here too\n
+  """\n
+\n
+  meta_type = \'ERP5 Email Document\'\n
+  portal_type = \'Email Document\'\n
+  add_permission = Permissions.AddPortalContent\n
+  # XXX must be removed later - only event is a delivery\n
+  isDelivery = ConstantGetter(\'isDelivery\', value=True)\n
+\n
+  # Declarative security\n
+  security = ClassSecurityInfo()\n
+  security.declareObjectProtected(Permissions.AccessContentsInformation)\n
+\n
+  # Declarative properties\n
+  property_sheets = ( PropertySheet.Base\n
+                    , PropertySheet.XMLObject\n
+                    , PropertySheet.CategoryCore\n
+                    , PropertySheet.DublinCore\n
+                    , PropertySheet.Version\n
+                    , PropertySheet.Document\n
+                    , PropertySheet.ExternalDocument\n
+                    , PropertySheet.Url\n
+                    , PropertySheet.TextDocument\n
+                    , PropertySheet.Arrow\n
+                    , PropertySheet.Task\n
+                    , PropertySheet.ItemAggregation\n
+                    , PropertySheet.EmailHeader\n
+                    , PropertySheet.Reference\n
+                    , PropertySheet.Data\n
+                    )\n
+\n
+  # Mail processing API\n
+  def _getMessage(self):\n
+    result = getattr(self, \'_v_message\', None)\n
+    if result is None:\n
+      result = message_from_string(str(self.getData()))\n
+      self._v_message = result\n
+    return result\n
+\n
+  def _getMessageTextPart(self):\n
+    """\n
+    Return the main text part of the message data\n
+\n
+    Based on rfc: http://tools.ietf.org/html/rfc2046#section-5.1.4)\n
+    """\n
+    # Default value if no text is found\n
+    found_part = None\n
+\n
+    part_list = [self._getMessage()]\n
+    while part_list:\n
+      part = part_list.pop(0)\n
+      if part.is_multipart():\n
+        if part.get_content_subtype() == \'alternative\':\n
+          # Try to get the favourite text format defined on preference\n
+          preferred_content_type = self.getPortalObject().portal_preferences.\\\n
+                                         getPreferredTextFormat(\'text/html\')\n
+          favourite_part = None\n
+          for subpart in part.get_payload():\n
+            if subpart.get_content_type() == preferred_content_type:\n
+              part_list.insert(0, subpart)\n
+            else:\n
+              part_list.append(subpart)\n
+        else:\n
+          part_list.extend(part.get_payload())\n
+      elif part.get_content_maintype() == \'text\':\n
+        found_part = part\n
+        break\n
+\n
+    return found_part\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation,\n
+                            \'isSupportBaseDataConversion\')\n
+  def isSupportBaseDataConversion(self):\n
+    """\n
+    """\n
+    return False\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getContentInformation\')\n
+  def getContentInformation(self):\n
+    """\n
+    Returns the content information from the header information.\n
+    This is used by the metadata discovery system.\n
+\n
+    Header information is converted in UTF-8 since this is the standard\n
+    way of representing strings in ERP5.\n
+    """\n
+    result = {}\n
+    for (name, value) in self._getMessage().items():\n
+      try: \n
+        decoded_header = decode_header(value)\n
+      except HeaderParseError, error_message:\n
+        decoded_header = ()\n
+        LOG(\'EmailDocument.getContentInformation\', INFO,\n
+            \'Failed to decode %s header of %s with error: %s\' %\n
+            (name, self.getPath(), error_message))\n
+      for text, encoding in decoded_header:\n
+        try:\n
+          if encoding is not None:\n
+            text = text.decode(encoding).encode(\'utf-8\')\n
+          else:\n
+            text = text.decode().encode(\'utf-8\')\n
+        except (UnicodeDecodeError, LookupError), error_message:\n
+          encoding = guessEncodingFromText(text, content_type=\'text/plain\')\n
+          if encoding is not None:\n
+            try:\n
+              text = text.decode(encoding).encode(\'utf-8\')\n
+            except (UnicodeDecodeError, LookupError), error_message:\n
+              text = repr(text)[1:-1]\n
+          else:\n
+            text = repr(text)[1:-1]\n
+        if name in result:\n
+          result[name] = \'%s %s\' % (result[name], text)\n
+        else:\n
+          result[name] = text\n
+    return result\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getAttachmentInformationList\')\n
+  def getAttachmentInformationList(self, **kw):\n
+    """\n
+    Returns a list of dictionnaries for every attachment. Each dictionnary\n
+    represents the metadata of the attachment.\n
+    **kw - support for listbox (TODO: improve it)\n
+    """\n
+    result = []\n
+    for i, part in enumerate(self._getMessage().walk()):\n
+      if not part.is_multipart():\n
+        kw = dict(part.items())\n
+        kw[\'uid\'] = \'part_%s\' % i\n
+        kw[\'index\'] = i\n
+        filename = part.get_filename()\n
+        if not filename:\n
+          # get_filename return name only from Content-Disposition header\n
+          # of the message but sometimes this value is stored in\n
+          # Content-Type header\n
+          content_type_header = kw.get(\'Content-Type\',\n
+                                                    kw.get(\'Content-type\', \'\'))\n
+          filename_list = re.findall(filename_regexp,\n
+                                      content_type_header,\n
+                                      re.MULTILINE)\n
+          if filename_list:\n
+            filename = filename_list[0]\n
+        if filename:\n
+          kw[\'filename\'] = filename\n
+        else:\n
+          content_disposition = kw.get(\'Content-Disposition\', \n
+                                           kw.get(\'Content-disposition\', None))\n
+          prefix = \'part_\'\n
+          if content_disposition:\n
+            if content_disposition.split(\';\')[0] == \'attachment\':\n
+              prefix = \'attachment_\'\n
+            elif content_disposition.split(\';\')[0] == \'inline\':\n
+              prefix = \'inline_\'\n
+          kw[\'filename\'] = \'%s%s\' % (prefix, i)\n
+        kw[\'content_type\'] = part.get_content_type()\n
+        result.append(kw)\n
+    return result\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getAttachmentData\')\n
+  def getAttachmentData(self, index, REQUEST=None):\n
+    """\n
+    Returns the decoded data of an attachment.\n
+    """\n
+    for i, part in enumerate(self._getMessage().walk()):\n
+      if index == i:\n
+        # This part should be handled in skin script\n
+        # but it was a bit easier to access items here\n
+        kw = dict(part.items())\n
+        content_type = part.get_content_type()\n
+        if REQUEST is not None:\n
+          filename = part.get_filename()\n
+          if not filename:\n
+            # get_filename return name only from Content-Disposition header\n
+            # of the message but sometimes this value is stored in\n
+            # Content-Type header\n
+            content_type_header = kw.get(\'Content-Type\',\n
+                                                    kw.get(\'Content-type\', \'\'))\n
+            filename_list = re.findall(filename_regexp,\n
+                                        content_type_header,\n
+                                        re.MULTILINE)\n
+            if filename_list:\n
+              filename = filename_list[0]\n
+          RESPONSE = REQUEST.RESPONSE\n
+          RESPONSE.setHeader(\'Accept-Ranges\', \'bytes\')\n
+          if content_type and filename:\n
+            RESPONSE.setHeader(\'Content-Type\', content_type)\n
+            RESPONSE.setHeader(\'Content-disposition\',\n
+                               \'attachment; filename="%s"\' % filename.encode(\'utf-8\'))\n
+#                               \'attachment; filename="%s"\' % filename)\n
+        if \'text/html\' in content_type:\n
+          # Strip out html content in safe mode.\n
+          mime, content = self.convert(format=\'html\',\n
+                                       text_content=part.get_payload(decode=1),\n
+                                       index=index) # add index to generate\n
+                                       # a unique cache key per attachment\n
+        else:\n
+          content = part.get_payload(decode=1)\n
+        return content\n
+    return KeyError, "No attachment with index %s" % index\n
+\n
+  # Helper methods which override header property sheet\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getSender\')\n
+  def getSender(self, *args):\n
+    """\n
+    """\n
+    if not self.hasData():\n
+      return self._baseGetSender(*args)\n
+    return self.getContentInformation().get(\'From\', *args)\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getRecipient\')\n
+  def getRecipient(self, *args):\n
+    """\n
+    """\n
+    if not self.hasData():\n
+      return self._baseGetRecipient(*args)\n
+    return self.getContentInformation().get(\'To\', *args)\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getCcRecipient\')\n
+  def getCcRecipient(self, *args):\n
+    """\n
+    """\n
+    if not self.hasData():\n
+      return self._baseGetCcRecipient(*args)\n
+    return self.getContentInformation().get(\'Cc\', *args)\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getGroupingReference\')\n
+  def getGroupingReference(self, *args):\n
+    """\n
+      The reference refers here to the Thread of messages.\n
+    """\n
+    if not self.hasData():\n
+      result = self._baseGetGroupingReference(*args)\n
+    else:\n
+      if not len(args):\n
+        args = (self._baseGetGroupingReference(),)\n
+      result = self.getContentInformation().get(\'References\', *args)\n
+      if result:\n
+        result = result.split() # Only take the first reference\n
+        if result:\n
+          result = result[0]\n
+    if result:\n
+      return result\n
+    return self.getFilename(*args)\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation,\n
+                            \'getSourceReference\')\n
+  def getSourceReference(self, *args):\n
+    """\n
+      The Message-ID is considered here as the source reference\n
+      of the message on the sender side (source)\n
+    """\n
+    if not self.hasData():\n
+      return self._baseGetSourceReference(*args)\n
+    if not len(args):\n
+      args = (self._baseGetSourceReference(),)\n
+    content_information = self.getContentInformation()\n
+    return content_information.get(\'Message-ID\') or content_information.get(\'Message-Id\', *args)\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getDestinationReference\')\n
+  def getDestinationReference(self, *args):\n
+    """\n
+      The In-Reply-To is considered here as the reference\n
+      of the thread on the side of a former sender (destination)\n
+\n
+      This is a hack which can be acceptable since \n
+      the reference of an email is shared.\n
+    """\n
+    if not self.hasData():\n
+      return self._baseGetDestinationReference(*args)\n
+    if not len(args):\n
+      args = (self._baseGetDestinationReference(),)\n
+    return self.getContentInformation().get(\'In-Reply-To\', *args)\n
+\n
+  # Overriden methods\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getTitle\')\n
+  def getTitle(self, default=_MARKER):\n
+    """\n
+    Returns the title from the mail subject\n
+    """\n
+    if not self.hasFile():\n
+      # Return the standard text content if no file was provided\n
+      if default is _MARKER:\n
+        return self._baseGetTitle()\n
+      else:\n
+        return self._baseGetTitle(default)\n
+    subject = self.getContentInformation().get(\'Subject\', \'\')\n
+    # Remove all newlines\n
+    subject = subject.replace(\'\\r\', \'\')\n
+    subject = subject.replace(\'\\n\', \'\')\n
+    return subject\n
+  \n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getStartDate\')\n
+  def getStartDate(self, default=_MARKER):\n
+    """\n
+    Returns the date from the mail date\n
+    """\n
+    if not self.hasFile():\n
+      # Return the standard start date if no file was provided\n
+      if default is _MARKER:\n
+        return self._baseGetStartDate()\n
+      else:\n
+        return self._baseGetStartDate(default)\n
+    date_string = self.getContentInformation().get(\'Date\', None)\n
+    if date_string:\n
+      parsed_date_string = parsedate_tz(date_string)\n
+      if parsed_date_string is not None:\n
+        try:\n
+          try:\n
+            time = mktime_tz(parsed_date_string)\n
+          except OverflowError: # No way to get a date - parsing failed (XXX)\n
+            time = None\t\t  \n
+\t  if time:\n
+\t    return DateTime(time)\n
+        except ValueError:\n
+\t  # If the parsed date is not conformant, nothing to do\n
+          pass\n
+    return self.getCreationDate()\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getTextContent\')\n
+  def getTextContent(self, default=_MARKER):\n
+    """\n
+    Returns the content of the email as text. This is useful\n
+    to display the content of an email.\n
+    """\n
+    self._checkConversionFormatPermission(None)\n
+    if not self.hasFile():\n
+      # Return the standard text content if no file was provided\n
+      # Or standard text content is not empty.\n
+      if default is _MARKER:\n
+        return self._baseGetTextContent()\n
+      else:\n
+        return self._baseGetTextContent(default)\n
+\n
+    else:\n
+      part = self._getMessageTextPart()\n
+      if part is None:\n
+        text_result = ""\n
+      else:\n
+        part_encoding = part.get_content_charset()\n
+        message_text = part.get_payload(decode=1)\n
+        if part.get_content_type() == \'text/html\':\n
+          mime, text_result = self.convert(format=\'html\',\n
+                                           text_content=message_text,\n
+                                           charset=part_encoding)\n
+        else:\n
+          if part_encoding != \'utf-8\':\n
+            try:\n
+              if part_encoding is not None:\n
+                text_result = message_text.decode(part_encoding).encode(\'utf-8\')\n
+              else:\n
+                text_result = message_text.decode().encode(\'utf-8\')\n
+            except (UnicodeDecodeError, LookupError), error_message:\n
+              LOG(\'EmailDocument.getTextContent\', INFO, \n
+                  \'Failed to decode %s TEXT message of %s with error: %s\' % \n
+                  (part_encoding, self.getPath(), error_message))\n
+              codec = guessEncodingFromText(message_text,\n
+                                            content_type=part.get_content_type())\n
+              if codec is not None:\n
+                try:\n
+                  text_result = message_text.decode(codec).encode(\'utf-8\')\n
+                except (UnicodeDecodeError, LookupError):\n
+                  text_result = repr(message_text)\n
+              else:\n
+                text_result = repr(message_text)\n
+          else:\n
+            text_result = message_text\n
+\n
+    if default is _MARKER:\n
+      return text_result\n
+    return text_result or default\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getContentType\')\n
+  def getContentType(self, default=_MARKER):\n
+    """\n
+    Returns the format of the email (text or html).\n
+    \n
+    TODO: add support for legacy objects\n
+    """\n
+    if not self.hasFile():\n
+      # Return the standard text format if no file was provided\n
+      if default is _MARKER:\n
+        return TextDocument.getContentType(self)\n
+      else:\n
+        return TextDocument.getContentType(self, default)\n
+    else:\n
+      part = self._getMessageTextPart()\n
+      if part is None:\n
+        return \'text/plain\'\n
+      else:\n
+        return part.get_content_type()\n
+\n
+  email_parser = re.compile(\'[ ;,<>\\\'"]*([^<> ;,\\\'"]+?\\@[^<> ;,\\\'"]+)[ ;,<>\\\'"]*\',re.IGNORECASE)\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getContentURLList\')\n
+  def getContentURLList(self):\n
+    """\n
+      Overriden to include emails as URLs\n
+    """\n
+    result = TextDocument.getContentURLList(self)\n
+    result.extend(re.findall(self.email_parser, self.getSender(\'\')))\n
+    result.extend(re.findall(self.email_parser, self.getRecipient(\'\')))\n
+    result.extend(re.findall(self.email_parser, self.getCcRecipient(\'\')))\n
+    result.extend(re.findall(self.email_parser, self.getBccRecipient(\'\')))\n
+    return result\n
+\n
+  # Conversion API Implementation\n
+  def _convertToBaseFormat(self):\n
+    """\n
+      Build a structure which can be later used\n
+      to extract content information from this mail\n
+      message.\n
+    """\n
+    pass\n
+\n
+  security.declareProtected(Permissions.View, \'index_html\')\n
+  index_html = TextDocument.index_html\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'convert\')\n
+  convert = TextDocument.convert\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'hasBaseData\')\n
+  def hasBaseData(self):\n
+    """\n
+      Since there is no need to convert to a base format, we consider that \n
+      we always have the base format data if and only is we have\n
+      some text defined or a file.\n
+    """\n
+    return self.hasFile() or self.hasTextContent()\n
+\n
+  # Methods which can be useful to prepare a reply by email to an event\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getReplyBody\')\n
+  def getReplyBody(self):\n
+    """\n
+      This is used in order to respond to a mail,\n
+      this put a \'> \' before each line of the body\n
+    """\n
+    if self.getContentType() == \'text/plain\':\n
+      body = self.asText()\n
+      if body:\n
+        return \'> \' + str(body).replace(\'\\n\', \'\\n> \')\n
+    elif self.getContentType() == \'text/html\':\n
+      return \'<br/><blockquote type="cite">\\n%s\\n</blockquote>\' %\\\n
+                                self.asStrippedHTML()\n
+    return \'\'\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getReplySubject\')\n
+  def getReplySubject(self):\n
+    """\n
+      This is used in order to respond to a mail,\n
+      this put a \'Re: \' before the orignal subject\n
+\n
+      XXX - not multilingual\n
+    """\n
+    reply_subject = self.getTitle()\n
+    if reply_subject.find(\'Re: \') != 0:\n
+      reply_subject = \'Re: \' + reply_subject\n
+    return reply_subject\n
+\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getReplyTo\')\n
+  def getReplyTo(self):\n
+    """\n
+      Returns the send of this message based on getContentInformation\n
+    """\n
+    content_information = self.getContentInformation()\n
+    return content_information.get(\'Return-Path\', content_information.get(\'From\'))\n
+\n
+  security.declareProtected(Permissions.UseMailhostServices, \'send\')\n
+  def send(self, from_url=None, to_url=None, cc_url=None, bcc_url=None, reply_url=None, subject=None,\n
+           body=None, attachment_format=None, attachment_list=None, download=False):\n
+    """\n
+      Sends the current event content by email. If documents are\n
+      attached through the aggregate category, enclose them.\n
+\n
+      XXX - needs to be unified with Event methods\n
+\n
+      from_url - the sender of this email. If not provided\n
+                 we will use source to find a valid\n
+                 email address\n
+\n
+      to_url   - the recipients of this email. If not provided\n
+                 we will use destination category to \n
+                 find a list of valid email addresses\n
+\n
+      reply_url - the email address to reply to. If nothing\n
+                 is provided, use the email defined in \n
+                 preferences.\n
+\n
+      subject  - a custom title. If not provided, we will use\n
+                 getTitle\n
+\n
+      body     - a body message If not provided, we will\n
+                 use the text representation of the event\n
+                 as body (UTF-8)\n
+\n
+      attachment_list -- list of dictionary which contains raw data and\n
+                         name and mimetype for attachment.\n
+                         See NotificationTool.buildEmailMessage.\n
+\n
+      attachment_format - defines an option format\n
+                 to convet attachments to (ex. application/pdf)\n
+\n
+      download - if set to True returns, the message online\n
+                rather than sending it.\n
+\n
+      TODO: support conversion to base format and use\n
+      base format rather than original format\n
+\n
+      TODO2: consider turning this method into a general method for\n
+      any ERP5 document.\n
+    """\n
+    if not _checkPermission(Permissions.View, self):\n
+      raise Unauthorized\n
+\n
+    additional_headers = {}\n
+\n
+    #\n
+    # Build mail message\n
+    # This part will be replaced with MailTemplate soon.\n
+    #\n
+    if body is None:\n
+      body = self.asText()\n
+\n
+    # Subject\n
+    if subject is None:\n
+      subject = self.getTitle()\n
+\n
+    # From\n
+    if from_url is None:\n
+      sender = self.getSourceValue()\n
+      if sender is not None:\n
+        if sender.getTitle():\n
+          from_url = \'"%s" <%s>\' % (sender.getTitle(),\n
+                                  sender.getDefaultEmailText())\n
+        else:\n
+          from_url = sender.getDefaultEmailText()\n
+      elif self.getSender():\n
+        from_url = self.getSender() # Access sender directly\n
+\n
+    # Return-Path\n
+    if reply_url is None:\n
+      reply_url = self.portal_preferences.getPreferredEventSenderEmail()\n
+    if reply_url:\n
+      additional_headers[\'Return-Path\'] = reply_url\n
+\n
+    # Reply-To\n
+    destination_reference = self.getDestinationReference()\n
+    if destination_reference is not None:\n
+      additional_headers[\'In-Reply-To\'] = destination_reference\n
+\n
+    # To (multiple)\n
+    to_url_list = []\n
+    if to_url is None:\n
+      for recipient in self.getDestinationValueList():\n
+        email = recipient.getDefaultEmailText()\n
+        if email:\n
+          if recipient.getTitle():\n
+            to_url_list.append(\'"%s" <%s>\' % (recipient.getTitle(), email))\n
+          else:\n
+            to_url_list.append(email)\n
+        else:\n
+          raise ValueError, \'Recipient %s has no defined email\' % recipient\n
+      if not to_url_list and self.getRecipient():\n
+        to_url_list.append(self.getRecipient())\n
+    elif type(to_url) in types.StringTypes:\n
+      to_url_list.append(to_url)\n
+\n
+    # bcc_url\n
+    if bcc_url is None:\n
+      bcc_url = self.getBccRecipient()\n
+    if cc_url is None:\n
+      cc_url = self.getCcRecipient()\n
+\n
+    # Attachments\n
+    if attachment_list is None:\n
+      attachment_list = []\n
+    document_type_list = self.getPortalDocumentTypeList()\n
+    for attachment in self.getAggregateValueList():\n
+      mime_type = None\n
+      content = None\n
+      name = None\n
+      if not attachment.getPortalType() in document_type_list:\n
+        mime_type = \'application/pdf\'\n
+        content = attachment.asPDF() # XXX - Not implemented yet\n
+      else:\n
+        #\n
+        # Document type attachment\n
+        #\n
+\n
+        # WARNING - this could fail since getContentType\n
+        # is not (yet) part of Document API\n
+        if getattr(attachment, \'getContentType\', None) is not None:\n
+          mime_type = attachment.getContentType()\n
+        else:\n
+          raise ValueError, "Cannot find mimetype of the document."\n
+\n
+        if mime_type is not None:\n
+          try:\n
+            mime_type, content = attachment.convert(mime_type)\n
+            if mime_type is None: mime_type = \'application/pdf\' # dirty hack JPS\n
+          except ConversionError:\n
+            mime_type = attachment.getBaseContentType()\n
+            if mime_type is None: mime_type = \'application/pdf\' # dirty hack JPS\n
+            content = attachment.getBaseData()\n
+          except (NotImplementedError, MimeTypeException):\n
+            pass\n
+\n
+        if content is None:\n
+          if getattr(attachment, \'getTextContent\', None) is not None:\n
+            content = attachment.getTextContent()\n
+          elif getattr(attachment, \'getData\', None) is not None:\n
+            content = attachment.getData()\n
+          elif getattr(attachment, \'getBaseData\', None) is not None:\n
+            content = attachment.getBaseData()\n
+\n
+      if not isinstance(content, str):\n
+        content = str(content)\n
+\n
+      attachment_list.append({\'mime_type\':mime_type,\n
+                              \'content\':content,\n
+\t\t\t      \'name\':attachment.getReference() or attachment.getTitle() or attachment.Id()}\n
+                             )\n
+\n
+    mail_message = None\n
+    for to_url in to_url_list:\n
+      mime_message = buildEmailMessage(from_url=from_url, to_url=to_url, # XXX Missing Cc\n
+                                       cc_url=cc_url, bcc_url=bcc_url,\n
+                                       msg=body, subject=subject,\n
+                                       attachment_list=attachment_list,\n
+                                       additional_headers=additional_headers)\n
+      mail_message = mime_message.as_string()\n
+      self.activate(activity=\'SQLQueue\').sendMailHostMessage(mail_message)\n
+\n
+    # Save one of mail messages.\n
+    if mail_message is not None:\n
+      self.setData(mail_message)\n
+\n
+    # Only for debugging purpose\n
+    if download:\n
+      return mail_message\n
+\n
+  security.declareProtected(Permissions.UseMailhostServices, \'sendMailHostMessage\')\n
+  def sendMailHostMessage(self, message):\n
+    """\n
+      Send one by one\n
+\n
+      XXX - Needs to be unified with Event methods\n
+    """\n
+    self.MailHost.send(message) # uggly hardcoding\n
+\n
+  # Because TextDocument is base_convertable and not EmailDocument.\n
+  # getData must be implemented like File.getData is.\n
+  security.declareProtected(Permissions.AccessContentsInformation, \'getData\')\n
+  getData = File.getData\n
+
+
+]]></string> </value>
+        </item>
+        <item>
+            <key> <string>version</string> </key>
+            <value> <string>erp5</string> </value>
+        </item>
+      </dictionary>
+    </pickle>
+  </record>
+</ZopeData>
